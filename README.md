@@ -2,6 +2,7 @@
 <img align="right" width=180px alt="Unicorn" src="https://media1.tenor.com/m/8druEACXtX8AAAAd/michi-cat-meme.gif" />
 API REST para organizar el estudio universitario: ramos, evaluaciones, sesiones de estudio, metas, recordatorios y analytics.
 
+
 ## Stack
 
 - Node.js + TypeScript + Express
@@ -11,13 +12,16 @@ API REST para organizar el estudio universitario: ramos, evaluaciones, sesiones 
 - Rate limiting con `express-rate-limit`
 - Documentación con OpenAPI (`swagger-jsdoc` + `swagger-ui-express`)
 - Tests con Jest + Supertest
+- Lint con ESLint (flat config + `typescript-eslint`)
+- Docker + Docker Compose
+- CI con GitHub Actions
 
 ## Modelo de datos
 
 ```
 User 1—N Subject 1—N Assignment
-Subject 1—N StudySession    (Assignment 1—N StudySession, opcional)
-User 1—N Goal   (Subject 1—N Goal, opcional)
+Subject 1—N StudySession (Assignment 1—N StudySession, opcional)
+User 1—N Goal (Subject 1—N Goal, opcional)
 Assignment/Goal 1—N Reminder
 ```
 
@@ -55,8 +59,7 @@ npm install
 ```bash
 cp .env.example .env
 ```
-
-Edita `.env` con tu propia `DATABASE_URL` y genera secretos JWT reales.
+hay que generar `.env` basado en `.env.example` con tu propia `DATABASE_URL` y genera secretos JWT reales.
 
 ### 4. Base de datos
 
@@ -64,7 +67,7 @@ Edita `.env` con tu propia `DATABASE_URL` y genera secretos JWT reales.
 npm run prisma:migrate
 ```
 
-Esto crea las tablas según `prisma/schema.prisma` y genera el cliente de Prisma.
+esto crea las tablas según `prisma/schema.prisma` y genera el cliente de Prisma.
 
 ### 5. Levantar el servidor en desarrollo
 
@@ -84,11 +87,11 @@ curl -X POST http://localhost:3000/auth/register \
   -d '{"email":"test@test.com","password":"supersecret123","name":"Test"}'
 ```
 
-Usa el `accessToken` de la respuesta como `Authorization: Bearer <token>` para llamar a `/subjects`.
+usa el `accessToken` de la respuesta como `Authorization: Bearer <token>` para llamar a `/subjects`.
 
 ## Testing
 
-Los tests de `tests/auth.test.ts` corren contra una base de datos real (no se mockea Prisma), para detectar problemas reales de constraints y relaciones. Usa una base de datos de test separada:
+los tests de `tests/auth.test.ts` corren contra una base de datos real (no se mockea Prisma), para detectar problemas reales de constraints y relaciones. Usa una base de datos de test separada:
 
 ```bash
 # en .env o como variable de entorno antes de correr los tests
@@ -99,3 +102,21 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/smart_study_planner_
 npm run prisma:migrate
 npm test
 ```
+
+## Docker
+
+la API está dockerizada con un build multi-stage (compila TypeScript y genera el cliente de Prisma en una etapa, y la imagen final solo lleva `dist/` + dependencias de producción — sin herramientas de compilación ni devDependencies).
+
+```bash
+docker compose up --build
+```
+
+esto levanta dos servicios:
+- `db`: Postgres 16, expuesto en el **puerto 5433** del host (no 5432, para no chocar con un Postgres nativo que ya tengas corriendo). Internamente la API se conecta a `db:5432` a través de la red de Docker.
+- `api`: construye la imagen del `Dockerfile`, espera a que `db` esté healthy, corre `prisma migrate deploy` automáticamente al arrancar, y luego levanta el servidor.
+
+es necesario tener `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` en tu `.env` (el mismo `.env` de la raíz del proyecto — Docker Compose lo lee automáticamente).
+
+## CI (GitHub Actions)
+
+en cada push o PR a `main`, [.github/workflows/ci.yml](.github/workflows/ci.yml) levanta un contenedor de Postgres como servicio y corre, en orden: `npm run lint` (ESLint), `tsc --noEmit` (type-check), `prisma migrate deploy`, `npm run build`, y `npm test`. Si cualquiera falla, el workflow falla.
